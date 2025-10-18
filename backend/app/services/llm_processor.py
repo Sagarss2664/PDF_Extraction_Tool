@@ -1001,17 +1001,25 @@ class LLMProcessor:
         try:
             self.client = Groq(api_key=self.api_key)
             
-            # Simplified model list for better reliability
+            # Updated model list with better token limits
             self.available_models = [
                 {
                     "name": "llama-3.3-70b-versatile",
                     "priority": 1,
-                    "max_tokens": 8000  # Increased for larger responses
+                    "max_tokens": 4000,  # Reduced for rate limits
+                    "context_window": 131072
                 },
                 {
                     "name": "llama-3.1-8b-instant", 
                     "priority": 2,
-                    "max_tokens": 8000
+                    "max_tokens": 3000,  # Reduced for rate limits
+                    "context_window": 131072
+                },
+                {
+                    "name": "mixtral-8x7b-32768",
+                    "priority": 3,
+                    "max_tokens": 4000,
+                    "context_window": 32768
                 }
             ]
             
@@ -1576,11 +1584,11 @@ class LLMProcessor:
                 self.usage_stats["cache_hits"] += 1
                 return self.response_cache[cache_key]
             
-            # Create template-specific prompt
-            prompt = self._create_template_specific_prompt(combined_text, template_config, template_id)
+            # Create template-specific prompt with text optimization
+            prompt = self._create_optimized_prompt(combined_text, template_config, template_id)
             
-            # Execute extraction with template validation
-            structured_data = self._execute_template_extraction(prompt, template_config, template_id)
+            # Execute extraction with template validation and rate limit handling
+            structured_data = self._execute_extraction_with_retry(prompt, template_config, template_id)
             
             # Add metadata
             structured_data["_metadata"] = {
@@ -1629,9 +1637,10 @@ class LLMProcessor:
         
         combined_text = "\n\n".join(texts)
         
-        # Less aggressive truncation for better extraction
-        if len(combined_text) > 25000:
-            combined_text = combined_text[:25000] + "... [text truncated for processing]"
+        # More aggressive truncation for rate limits
+        if len(combined_text) > 15000:
+            logger.warning(f"⚠️ Text too long ({len(combined_text)} chars), truncating to 15000")
+            combined_text = combined_text[:15000] + "... [text truncated for rate limits]"
         
         logger.info(f"📝 Combined text length: {len(combined_text)} characters")
         return combined_text
@@ -1641,9 +1650,11 @@ class LLMProcessor:
         content = f"{text}_{template_id}"
         return hashlib.md5(content.encode()).hexdigest()
 
-    def _create_template_specific_prompt(self, text: str, template_config: Dict[str, Any], template_id: int) -> str:
-        """Create template-specific prompt with strict instructions"""
-        schema_str = json.dumps(template_config["json_schema"], indent=2)
+    def _create_optimized_prompt(self, text: str, template_config: Dict[str, Any], template_id: int) -> str:
+        """Create optimized prompt with reduced token usage"""
+        # Use simplified schema for token efficiency
+        simplified_schema = self._get_simplified_schema(template_id)
+        schema_str = json.dumps(simplified_schema, indent=2)
         
         # Template-specific instructions
         if template_id == 1:
@@ -1657,6 +1668,9 @@ class LLMProcessor:
             Focus on: Executive summary, investment schedule, financial statements, company profiles
             """
         
+        # Simplified guidelines for token efficiency
+        simplified_guidelines = self._get_simplified_guidelines(template_id)
+        
         prompt = f"""
         FINANCIAL DOCUMENT DATA EXTRACTION
         
@@ -1666,7 +1680,7 @@ class LLMProcessor:
         {template_specific_instruction}
         
         EXTRACTION GUIDELINES:
-        {template_config['extraction_guidelines']}
+        {simplified_guidelines}
         
         DOCUMENT TEXT:
         {text}
@@ -1685,66 +1699,145 @@ class LLMProcessor:
         RETURN VALID JSON:
         """
         
+        logger.info(f"📝 Prompt length: {len(prompt)} characters")
         return prompt
 
-    def _execute_template_extraction(self, prompt: str, template_config: Dict[str, Any], template_id: int) -> Dict[str, Any]:
-        """Execute extraction with template validation"""
-        for model_config in self.available_models:
-            model_name = model_config["name"]
-            
-            try:
-                logger.info(f"🤖 Trying model: {model_name} for template {template_id}")
-                
-                response = self.client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": f"You are a financial data extraction expert. You MUST extract data for Template {template_id}. Return ONLY valid JSON without any additional text."
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    temperature=0.1,
-                    max_tokens=8000,
-                    stream=False
-                )
-                
-                result_text = response.choices[0].message.content
-                structured_data = self._parse_response(result_text)
-                
-                # Enhanced validation to ensure template-specific data
-                if self._validate_template_specific_data(structured_data, template_id):
-                    logger.info(f"✅ Model {model_name} produced valid data for template {template_id}")
-                    return structured_data
-                else:
-                    logger.warning(f"⚠️ Model {model_name} produced invalid data for template {template_id}")
-                    
-            except Exception as e:
-                logger.warning(f"❌ Model {model_name} failed for template {template_id}: {e}")
-                continue
+    def _get_simplified_schema(self, template_id: int) -> Dict[str, Any]:
+        """Get simplified schema to reduce token usage"""
+        if template_id == 1:
+            return {
+                "Fund_and_Investment_Vehicle_Information": {
+                    "Fund_Details": {
+                        "Fund_Name": "string or null",
+                        "Fund_Currency": "string or null",
+                        "Fund_Size": "number or null",
+                        "Total_Commitments": "number or null"
+                    }
+                },
+                "Fund_Manager": {
+                    "Management_Company": {
+                        "Management_Company_Name": "string or null"
+                    }
+                },
+                "Fund_Investment_Vehicle_Financial_Position": {
+                    "Performance_Metrics": {
+                        "NAV_Gross": "number or null",
+                        "Gross_IRR": "number or null",
+                        "TVPI": "number or null"
+                    }
+                },
+                "Fund_Companies": [
+                    {
+                        "Company_Name": "string",
+                        "Industry": "string or null"
+                    }
+                ]
+            }
+        else:
+            return {
+                "Executive_Portfolio_Summary": {
+                    "Portfolio_Overview": {
+                        "Assets_Under_Management": "number or null",
+                        "Number_of_Portfolio_Companies": "number or null"
+                    }
+                },
+                "Schedule_of_Investments": [
+                    {
+                        "Company_Name": "string",
+                        "Total_Invested": "number or null",
+                        "Reported_Value": "number or null"
+                    }
+                ]
+            }
+
+    def _get_simplified_guidelines(self, template_id: int) -> str:
+        """Get simplified guidelines to reduce token usage"""
+        if template_id == 1:
+            return """
+            Extract key private equity fund data:
+            - Fund name, currency, size, commitments
+            - Management company name
+            - Performance metrics: NAV, IRR, TVPI
+            - Portfolio companies with names and industries
+            Use null for missing data. Return valid JSON.
+            """
+        else:
+            return """
+            Extract key portfolio summary data:
+            - Assets under management, portfolio company count
+            - Investment schedule with company names and values
+            Use null for missing data. Return valid JSON.
+            """
+
+    def _execute_extraction_with_retry(self, prompt: str, template_config: Dict[str, Any], template_id: int) -> Dict[str, Any]:
+        """Execute extraction with retry logic for rate limits"""
+        max_retries = 3
+        retry_delay = 2  # seconds
         
-        # All models failed
-        raise Exception(f"All extraction attempts failed for template {template_id}")
+        for attempt in range(max_retries):
+            for model_config in self.available_models:
+                model_name = model_config["name"]
+                
+                try:
+                    logger.info(f"🤖 Attempt {attempt + 1}: Trying model {model_name} for template {template_id}")
+                    
+                    response = self.client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": f"You are a financial data extraction expert. Extract data for Template {template_id}. Return ONLY valid JSON."
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.1,
+                        max_tokens=model_config["max_tokens"],
+                        stream=False
+                    )
+                    
+                    result_text = response.choices[0].message.content
+                    structured_data = self._parse_response(result_text)
+                    
+                    # Enhanced validation to ensure template-specific data
+                    if self._validate_template_specific_data(structured_data, template_id):
+                        logger.info(f"✅ Model {model_name} produced valid data for template {template_id}")
+                        return structured_data
+                    else:
+                        logger.warning(f"⚠️ Model {model_name} produced invalid data for template {template_id}")
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if "rate_limit" in error_msg or "413" in error_msg or "429" in error_msg:
+                        logger.warning(f"⏰ Rate limit hit for {model_name}, waiting {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        break  # Break to retry with same model
+                    else:
+                        logger.warning(f"❌ Model {model_name} failed for template {template_id}: {e}")
+                        continue
+        
+        # All models and retries failed
+        raise Exception(f"All extraction attempts failed for template {template_id} after {max_retries} retries")
 
     def _validate_template_specific_data(self, data: Dict[str, Any], template_id: int) -> bool:
         """Validate that data matches template requirements"""
         if not data or not isinstance(data, dict):
             return False
         
-        # Template-specific validation
+        # More lenient validation for rate-limited scenarios
         if template_id == 1:
-            # Template 1 should have private equity specific fields
+            # Template 1 should have some private equity fields
             expected_fields = ['Fund_and_Investment_Vehicle_Information', 'Fund_Manager', 'Fund_Companies']
             found_expected = any(field in data for field in expected_fields)
         else:
-            # Template 2 should have portfolio summary specific fields  
-            expected_fields = ['Executive_Portfolio_Summary', 'Schedule_of_Investments', 'Statement_of_Operations']
+            # Template 2 should have some portfolio summary fields  
+            expected_fields = ['Executive_Portfolio_Summary', 'Schedule_of_Investments']
             found_expected = any(field in data for field in expected_fields)
         
-        return found_expected and self._count_data_points(data) >= 5
+        return found_expected and self._count_data_points(data) >= 3  # Reduced threshold
 
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """Parse LLM response with enhanced error handling"""
@@ -1797,12 +1890,14 @@ class LLMProcessor:
                 except json.JSONDecodeError:
                     pass
             
-            raise ValueError("No valid JSON found in response")
+            # Fallback: return minimal valid structure
+            logger.warning("⚠️ No valid JSON found, returning fallback structure")
+            return {"error": "No structured data extracted", "raw_response": cleaned_text[:500]}
             
         except Exception as e:
             logger.error(f"Response parsing failed: {e}")
             logger.error(f"Response text: {response_text[:500]}...")
-            raise ValueError(f"Failed to parse response: {str(e)}")
+            return {"error": f"Failed to parse response: {str(e)}"}
 
     def _count_data_points(self, data: Any) -> int:
         """Count non-null data points"""
