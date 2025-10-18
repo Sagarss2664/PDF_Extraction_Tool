@@ -304,10 +304,31 @@ async def _extract_data_internal(files: List[UploadFile], template_id: int):
             logger.info(f"🔍 [DEBUG] Processing PDF {i+1}/{len(saved_files)}: {os.path.basename(file_path)}")
             
             try:
-                text = pdf_extractor.extract_text(file_path)
+                # FIX: PDFExtractor returns a dictionary, not a string
+                extraction_result = pdf_extractor.extract_text(file_path)
                 logger.info(f"🔍 [DEBUG] PDF extraction completed for {os.path.basename(file_path)}")
-                logger.info(f"🔍 [DEBUG] Extracted text length: {len(text)} characters")
-                logger.info(f"🔍 [DEBUG] First 200 chars: {text[:200]}...")
+                
+                # Check if extraction was successful
+                if extraction_result.get("status") != "success":
+                    logger.error(f"❌ [DEBUG] PDF extraction failed: {extraction_result.get('error', 'Unknown error')}")
+                    extracted_texts.append("PDF_EXTRACTION_FAILED")
+                    continue
+                
+                # Extract the actual text content from the result dictionary
+                text = extraction_result.get("text", "")
+                char_count = extraction_result.get("char_count", 0)
+                page_count = extraction_result.get("page_count", 0)
+                
+                logger.info(f"🔍 [DEBUG] Extraction details - Pages: {page_count}, Chars: {char_count}, Status: {extraction_result.get('status')}")
+                logger.info(f"🔍 [DEBUG] Financial score: {extraction_result.get('financial_content_score', 0)}")
+                logger.info(f"🔍 [DEBUG] Tables found: {len(extraction_result.get('tables', []))}")
+                
+                # Safe text preview logging
+                if text and isinstance(text, str):
+                    preview = text[:200] + "..." if len(text) > 200 else text
+                    logger.info(f"🔍 [DEBUG] First 200 chars: {preview}")
+                else:
+                    logger.warning(f"🔍 [DEBUG] Text is empty or not string. Type: {type(text)}")
                 
                 # Validate extracted text
                 if not text or len(text.strip()) < 10:
