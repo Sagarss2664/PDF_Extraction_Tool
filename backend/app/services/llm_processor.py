@@ -1,4 +1,3 @@
-# # llm_processor.py
 # import json
 # import logging
 # import os
@@ -617,7 +616,7 @@
 
 #     def process_texts(self, extracted_texts: List[Dict[str, Any]], template_id: int) -> Dict[str, Any]:
 #         """
-#         Process extracted texts with specified template - ENHANCED VERSION
+#         Process extracted texts with specified template - COMPLETE FIXED VERSION
 #         """
 #         self.usage_stats["total_requests"] += 1
         
@@ -641,7 +640,32 @@
 #                 logger.info(f"💾 Cache hit for template {template_id}")
 #                 self.usage_stats["cache_hits"] += 1
 #                 return self.response_cache[cache_key]
-        
+            
+#             # Create template-specific prompt
+#             prompt = self._create_template_specific_prompt(combined_text, template_config, template_id)
+            
+#             # Execute extraction with template validation
+#             structured_data = self._execute_template_extraction(prompt, template_config, template_id)
+            
+#             # Add metadata
+#             structured_data["_metadata"] = {
+#                 "extraction_timestamp": datetime.now().isoformat(),
+#                 "template_name": template_config['name'],
+#                 "template_id": template_id,  # Ensure template ID is stored
+#                 "template_version": template_config['version'],
+#                 "processor_version": "2.3.0",
+#                 "data_points": self._count_data_points(structured_data)
+#             }
+            
+#             # Cache result with template-specific key
+#             if self.cache_enabled:
+#                 self.response_cache[cache_key] = structured_data
+            
+#             self.usage_stats["successful_extractions"] += 1
+#             logger.info(f"✅ Successfully extracted {self._count_data_points(structured_data)} data points for template {template_id}")
+            
+#             return structured_data
+            
 #         except Exception as e:
 #             self.usage_stats["failed_extractions"] += 1
 #             logger.error(f"❌ LLM processing failed for template {template_id}: {str(e)}")
@@ -776,63 +800,6 @@
         
 #         return found_expected and self._count_data_points(data) >= 5
 
-#     def process_texts(self, extracted_texts: List[Dict[str, Any]], template_id: int) -> Dict[str, Any]:
-#         """
-#         Process extracted texts with specified template - COMPLETE FIXED VERSION
-#         """
-#         self.usage_stats["total_requests"] += 1
-        
-#         try:
-#             # Validate inputs
-#             self._validate_inputs(extracted_texts, template_id)
-            
-#             # Get template configuration
-#             template_config = self.template_configs.get(template_id)
-#             if not template_config:
-#                 raise ValueError(f"Invalid template_id: {template_id}")
-            
-#             logger.info(f"🧠 PROCESSING WITH TEMPLATE: {template_config['name']} (ID: {template_id})")
-            
-#             # Combine texts
-#             combined_text = self._combine_texts(extracted_texts)
-            
-#             # Check cache with template-specific key
-#             cache_key = self._generate_cache_key(combined_text, template_id)
-#             if self.cache_enabled and cache_key in self.response_cache:
-#                 logger.info(f"💾 Cache hit for template {template_id}")
-#                 self.usage_stats["cache_hits"] += 1
-#                 return self.response_cache[cache_key]
-            
-#             # Create template-specific prompt
-#             prompt = self._create_template_specific_prompt(combined_text, template_config, template_id)
-            
-#             # Execute extraction with template validation
-#             structured_data = self._execute_template_extraction(prompt, template_config, template_id)
-            
-#             # Add metadata
-#             structured_data["_metadata"] = {
-#                 "extraction_timestamp": datetime.now().isoformat(),
-#                 "template_name": template_config['name'],
-#                 "template_id": template_id,  # Ensure template ID is stored
-#                 "template_version": template_config['version'],
-#                 "processor_version": "2.3.0",
-#                 "data_points": self._count_data_points(structured_data)
-#             }
-            
-#             # Cache result with template-specific key
-#             if self.cache_enabled:
-#                 self.response_cache[cache_key] = structured_data
-            
-#             self.usage_stats["successful_extractions"] += 1
-#             logger.info(f"✅ Successfully extracted {self._count_data_points(structured_data)} data points for template {template_id}")
-            
-#             return structured_data
-            
-#         except Exception as e:
-#             self.usage_stats["failed_extractions"] += 1
-#             logger.error(f"❌ LLM processing failed for template {template_id}: {str(e)}")
-#             raise Exception(f"LLM processing failed for template {template_id}: {str(e)}")
-
 #     def _parse_response(self, response_text: str) -> Dict[str, Any]:
 #         """Parse LLM response with enhanced error handling"""
 #         try:
@@ -966,7 +933,6 @@
 #     print("LLM Processor initialized")
 #     print("Supported templates:", get_supported_templates())
 #     print("Health check:", processor.health_check())
-# llm_processor.py
 import json
 import logging
 import os
@@ -1583,9 +1549,9 @@ class LLMProcessor:
         - Return valid JSON matching the exact schema
         """
 
-    def process_texts(self, extracted_texts: List[Dict[str, Any]], template_id: int) -> Dict[str, Any]:
+    def process_texts(self, extracted_texts: List[str], template_id: int) -> Dict[str, Any]:
         """
-        Process extracted texts with specified template - COMPLETE FIXED VERSION
+        Process extracted texts with specified template - FIXED VERSION
         """
         self.usage_stats["total_requests"] += 1
         
@@ -1600,7 +1566,7 @@ class LLMProcessor:
             
             logger.info(f"🧠 PROCESSING WITH TEMPLATE: {template_config['name']} (ID: {template_id})")
             
-            # Combine texts
+            # Combine texts - FIXED: Handle both strings and dictionaries
             combined_text = self._combine_texts(extracted_texts)
             
             # Check cache with template-specific key
@@ -1620,7 +1586,7 @@ class LLMProcessor:
             structured_data["_metadata"] = {
                 "extraction_timestamp": datetime.now().isoformat(),
                 "template_name": template_config['name'],
-                "template_id": template_id,  # Ensure template ID is stored
+                "template_id": template_id,
                 "template_version": template_config['version'],
                 "processor_version": "2.3.0",
                 "data_points": self._count_data_points(structured_data)
@@ -1640,23 +1606,34 @@ class LLMProcessor:
             logger.error(f"❌ LLM processing failed for template {template_id}: {str(e)}")
             raise Exception(f"LLM processing failed for template {template_id}: {str(e)}")
 
-    def _validate_inputs(self, extracted_texts: List[Dict[str, Any]], template_id: int):
-        """Validate input parameters"""
+    def _validate_inputs(self, extracted_texts: List[str], template_id: int):
+        """Validate input parameters - FIXED: Accept list of strings"""
         if not extracted_texts:
             raise ValueError("No extracted texts provided")
         
         if template_id not in self.template_configs:
             raise ValueError(f"Invalid template_id: {template_id}")
 
-    def _combine_texts(self, extracted_texts: List[Dict[str, Any]]) -> str:
-        """Combine extracted texts"""
-        texts = [text_data.get("text", "") for text_data in extracted_texts]
+    def _combine_texts(self, extracted_texts: List[str]) -> str:
+        """Combine extracted texts - FIXED: Handle list of strings"""
+        # Handle both strings and dictionaries for backward compatibility
+        texts = []
+        for text_item in extracted_texts:
+            if isinstance(text_item, dict):
+                # If it's a dictionary, extract the text field
+                text = text_item.get("text", "")
+            else:
+                # If it's already a string, use it directly
+                text = text_item
+            texts.append(text)
+        
         combined_text = "\n\n".join(texts)
         
         # Less aggressive truncation for better extraction
         if len(combined_text) > 25000:
             combined_text = combined_text[:25000] + "... [text truncated for processing]"
         
+        logger.info(f"📝 Combined text length: {len(combined_text)} characters")
         return combined_text
 
     def _generate_cache_key(self, text: str, template_id: int) -> str:
