@@ -71,12 +71,12 @@ class LLMProcessor:
                 {
                     "name": "llama-3.3-70b-versatile",
                     "priority": 1,
-                    "max_tokens": 8000  # Increased for larger responses
+                    "max_tokens": 12000  # Increased for larger responses
                 },
                 {
                     "name": "llama-3.1-8b-instant", 
                     "priority": 2,
-                    "max_tokens": 8000
+                    "max_tokens": 12000
                 }
             ]
             
