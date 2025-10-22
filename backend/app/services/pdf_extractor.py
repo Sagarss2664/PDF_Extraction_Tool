@@ -420,3 +420,4 @@ class PDFExtractor:
             sections.append(current_section)
         
         return sections
+    # End of pdf_extractor.py
