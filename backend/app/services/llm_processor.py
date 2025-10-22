@@ -967,3 +967,4 @@ if __name__ == "__main__":
     print("Supported templates:", get_supported_templates())
     print("Health check:", processor.health_check())
 
+# new thing
